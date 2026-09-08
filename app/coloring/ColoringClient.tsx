@@ -5,8 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { ArrowLeft, Check, ChevronLeft, Download, Eraser, Heart, Palette, RotateCcw, Sparkles, Undo2, Volume2, VolumeX, X } from 'lucide-react';
-import { findRegions, paintRegions, type Segmentation } from '@/lib/coloring';
+import { ArrowLeft, Check, Download, Eraser, Heart, Palette, RotateCcw, Sparkles, Undo2, Volume2, VolumeX, X } from 'lucide-react';
+import { DEFAULT_MIN_REGION_AREA, findRegions, migrateFills, paintRegions, type Segmentation } from '@/lib/coloring';
 import { pictures } from '@/lib/pictures';
 import { palette } from '@/lib/palette';
 import { registerColoringTools } from '@/lib/webmcp';
@@ -19,14 +19,14 @@ const keyFor = (p: typeof pictures[number]) => `${p.id}:${p.artVersion}`;
 
 function safeStored(): Stored {
   try {
-    const saved = JSON.parse(localStorage.getItem('taemsee-works-v2') || '{}');
-    if (saved && typeof saved === 'object') return saved;
+    const parsed = JSON.parse(localStorage.getItem('taemsee-works-v2') || '{}');
+    const saved: Stored = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
     const old = JSON.parse(localStorage.getItem('taemsee-works-v1') || 'null');
     if (Array.isArray(old)) {
-      const classic = pictures.filter(p => p.level === 'classic'); const migrated: Stored = {};
-      classic.forEach((p, i) => { const fills = old[i]?.fills ?? old[i]; if (fills && typeof fills === 'object') migrated[keyFor(p)] = fills; });
-      return migrated;
+      const classic = pictures.filter(p => p.level === 'classic');
+      classic.forEach((p, i) => { const fills = old[i]?.fills ?? old[i]; if (fills && typeof fills === 'object' && !saved[keyFor(p)]) saved[keyFor(p)] = fills; });
     }
+    return saved;
   } catch { /* local progress is optional */ }
   return {};
 }
@@ -50,16 +50,41 @@ export default function ColoringClient({ pictureId }: { pictureId: string }) {
   const [work, setWork] = useState<Work>({ fills: {}, history: [] }); const [segmentation, setSegmentation] = useState<Segmentation | null>(null);
   const [color, setColor] = useState<string>(palette[0][0]); const [erasing, setErasing] = useState(false); const [moreColors, setMoreColors] = useState(false);
   const [error, setError] = useState(false); const [notice, setNotice] = useState('เลือกสี แล้วแตะในช่องของภาพได้เลย'); const [sound, setSound] = useState(false); const [resetOpen, setResetOpen] = useState(false);
+  const [storageReady, setStorageReady] = useState(false);
   const [keyboardRegion, setKeyboardRegion] = useState(-1); const canvas = useRef<HTMLCanvasElement>(null); const audio = useRef<AudioContext | null>(null);
   const total = segmentation?.regions.length ?? 0; const completed = Object.keys(work.fills).filter(k => Number(k) < total).length;
 
-  useEffect(() => { const saved = safeStored()[keyFor(picture)] || {}; setWork({ fills: saved, history: [] }); }, [picture]);
-  useEffect(() => { try { const stored = safeStored(); stored[keyFor(picture)] = work.fills; localStorage.setItem('taemsee-works-v2', JSON.stringify(stored)); } catch { /* optional */ } }, [work.fills, picture]);
+  useEffect(() => { setStorageReady(false); const saved = safeStored()[keyFor(picture)] || {}; setWork({ fills: saved, history: [] }); }, [picture]);
+  useEffect(() => { if (!storageReady) return; try { const stored = safeStored(); stored[keyFor(picture)] = work.fills; localStorage.setItem('taemsee-works-v2', JSON.stringify(stored)); } catch { /* optional */ } }, [work.fills, picture, storageReady]);
   useEffect(() => {
     let active = true; setSegmentation(null); setError(false); setKeyboardRegion(-1); const img = new Image(); img.src = picture.asset;
-    img.onload = () => { if (!active) return; const output = document.createElement('canvas'); output.width = SIZE; output.height = SIZE; const ctx = output.getContext('2d', { willReadFrequently: true })!; drawSource(ctx, picture, img); const original = new Uint8ClampedArray(ctx.getImageData(0, 0, SIZE, SIZE).data); const virtual = addVirtualBorder(ctx); const found = findRegions({ width: SIZE, height: SIZE, data: virtual.data }, 180, original, picture.artVersion); setSegmentation(found); };
+    img.onload = () => { if (!active) return; const output = document.createElement('canvas'); output.width = SIZE; output.height = SIZE; const ctx = output.getContext('2d', { willReadFrequently: true })!; drawSource(ctx, picture, img); const original = new Uint8ClampedArray(ctx.getImageData(0, 0, SIZE, SIZE).data); const virtual = addVirtualBorder(ctx); const found = findRegions({ width: SIZE, height: SIZE, data: virtual.data }, DEFAULT_MIN_REGION_AREA, original, picture.artVersion); setSegmentation(found); };
     img.onerror = () => { if (active) setError(true); }; return () => { active = false; };
   }, [picture]);
+  useEffect(() => {
+    if (!segmentation) return;
+    let active = true;
+    const currentKey = keyFor(picture);
+    const stored = safeStored();
+    if (stored[currentKey] || !picture.legacyAsset) { setStorageReady(true); return () => { active = false; }; }
+    const legacyKey = `${picture.id}:${picture.artVersion.replace(/-v\d+$/, '-v1')}`;
+    const oldFills = stored[legacyKey];
+    if (!oldFills || Object.keys(oldFills).length === 0) { setStorageReady(true); return () => { active = false; }; }
+    const legacyImg = new Image(); legacyImg.src = picture.legacyAsset;
+    legacyImg.onload = () => {
+      if (!active) return;
+      const output = document.createElement('canvas'); output.width = SIZE; output.height = SIZE;
+      const ctx = output.getContext('2d', { willReadFrequently: true })!; drawSource(ctx, picture, legacyImg);
+      const original = new Uint8ClampedArray(ctx.getImageData(0, 0, SIZE, SIZE).data); const virtual = addVirtualBorder(ctx);
+      const oldSeg = findRegions({ width: SIZE, height: SIZE, data: virtual.data }, DEFAULT_MIN_REGION_AREA, original, legacyKey.split(':')[1]);
+      const migrated = migrateFills(oldSeg, segmentation, oldFills);
+      setWork({ fills: migrated.fills, history: [] });
+      if (migrated.unmatched.length) setNotice(`à¸¡à¸µ ${migrated.unmatched.length} à¸Šà¹ˆà¸­à¸‡à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¹€à¸•à¸´à¸¡à¹ƒà¸«à¸¡à¹ˆ`);
+      setStorageReady(true);
+    };
+    legacyImg.onerror = () => { if (active) setStorageReady(true); };
+    return () => { active = false; };
+  }, [segmentation, picture]);
   useEffect(() => { if (!segmentation || !canvas.current) return; const ctx = canvas.current.getContext('2d')!; ctx.putImageData(new ImageData(paintRegions(segmentation, work.fills), SIZE, SIZE), 0, 0); if (keyboardRegion >= 0 && segmentation.regions[keyboardRegion]) { const r = segmentation.regions[keyboardRegion]; ctx.strokeStyle = '#7760b4'; ctx.lineWidth = 3; ctx.setLineDash([6, 6]); ctx.strokeRect(r.minX - 4, r.minY - 4, r.maxX - r.minX + 8, r.maxY - r.minY + 8); } }, [segmentation, work.fills, keyboardRegion]);
 
   function fill(region: number, chosen = color, erase = erasing) {

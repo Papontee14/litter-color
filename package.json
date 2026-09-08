@@ -9,6 +9,8 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
+    "test:coloring": "node --experimental-strip-types lib/coloring.test.ts",
+    "audit:coloring": "node --experimental-strip-types scripts/audit-coloring-assets.ts",
     "lint": "oxlint",
     "format": "oxfmt"
   },
@@ -48,6 +50,7 @@
     "oxfmt": "0.61.0",
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",
+    "sharp": "0.34.5",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vite": "8.0.13",
