@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "vinext dev",
-    "build": "vinext build",
+    "build": "npm run audit:coloring && vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "test:coloring": "node --experimental-strip-types lib/coloring.test.ts",
     "audit:coloring": "node --experimental-strip-types scripts/audit-coloring-assets.ts",

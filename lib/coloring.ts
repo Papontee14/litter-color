@@ -23,9 +23,8 @@ export type Segmentation = {
   artVersion: string;
 };
 
-// Smaller components are antialiasing specks rather than useful touch targets.
-// They are reported so an asset audit can catch them instead of hiding them.
-export const DEFAULT_MIN_REGION_AREA = 4;
+// Every enclosed white pixel is paintable, including tiny enclosed details.
+export const DEFAULT_MIN_REGION_AREA = 1;
 
 // Segment original line art once, keeping boundaries independent of chosen colors.
 export function findRegions(
@@ -94,6 +93,11 @@ export function findRegions(
     }
   }
 
+  // Append newly supported tiny components, retaining classic-v1's existing IDs.
+  if (minArea === 1) {
+    regions.sort((a, b) => Number(b.area >= 4) - Number(a.area >= 4) || a.seed - b.seed);
+    regions.forEach((region, index) => { for (const pixel of region.pixels) labels[pixel] = index; });
+  }
   return { width, height, original: new Uint8ClampedArray(originalData), labels, regions, droppedRegions, borderRegions, minArea, artVersion };
 }
 
@@ -120,7 +124,7 @@ export function migrateFills(oldSegmentation: Segmentation, newSegmentation: Seg
       if (used.has(i)) continue;
       let overlap = 0;
       for (const pixel of oldRegion.pixels) if (newSets[i].has(pixel)) overlap++;
-      const ratio = overlap / oldRegion.area;
+      const ratio = overlap / Math.max(oldRegion.area, newSegmentation.regions[i].area);
       if (ratio > bestOverlap + 0.0001) {
         best = i;
         bestOverlap = ratio;

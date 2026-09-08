@@ -34,4 +34,16 @@ assert.deepEqual(Array.from(backgroundRed.slice((0)*4,(0)*4+3)),[255,255,255],'v
 const migrated = migrateFills(seg, seg, { 0: '#ff0000', 1: '#00ff00' });
 assert.deepEqual(migrated.fills, { 0: '#ff0000', 1: '#00ff00' }, 'unchanged masks migrate fills by overlap');
 assert.equal(migrated.unmatched.length, 0, 'all unchanged regions migrate');
+const speckData = new Uint8ClampedArray(8 * 8 * 4);
+for (let p = 0; p < 64; p++) speckData[p * 4 + 3] = 255;
+for (const p of [9, 27, 28, 35, 36]) speckData.fill(255, p * 4, p * 4 + 4);
+const allDetails = findRegions({ width: 8, height: 8, data: speckData });
+assert.equal(allDetails.regions.length, 2, 'one-pixel enclosed whites are fillable too');
+assert.equal(allDetails.droppedRegions.length, 0, 'no white detail is discarded');
+assert.equal(allDetails.labels[27], 0, 'existing larger region ID is retained');
+assert.equal(allDetails.labels[9], 1, 'new tiny region is appended');
+const allPainted = paintRegions(allDetails, { 0: '#ff0000', 1: '#ff0000' });
+assert.equal(allPainted[9 * 4 + 1], 0, 'tiny detail receives the chosen color');
+assert.equal(allPainted[0], 0, 'black pixels remain black');
+assert.deepEqual(paintRegions(allDetails, {}), speckData, 'reset restores small and large areas');
 console.log('PASS: enclosed regions, outside/outline protection, recolor, neighboring region isolation, erasing, invalid input');

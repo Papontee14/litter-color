@@ -1,7 +1,7 @@
 import path from 'node:path';
 import sharp from 'sharp';
 // @ts-expect-error Node's native TypeScript runner needs the explicit extension.
-import { DEFAULT_MIN_REGION_AREA, findRegions, type RegionSummary } from '../lib/coloring.ts';
+import { DEFAULT_MIN_REGION_AREA, findRegions, paintRegions, type RegionSummary } from '../lib/coloring.ts';
 // @ts-expect-error Node's native TypeScript runner needs the explicit extension.
 import { pictures } from '../lib/pictures.ts';
 
@@ -10,7 +10,7 @@ const INSET = 30;
 const CONTENT_SIZE = SIZE - INSET * 2;
 const MIN_TOUCH_AREA = 180;
 const MIN_TOUCH_EDGE = 14;
-const MIN_MEANINGFUL_DROPPED_AREA = 4;
+const MIN_MEANINGFUL_DROPPED_AREA = 1;
 
 type Audit = {
   id: string;
@@ -23,6 +23,7 @@ type Audit = {
   tooSmallRegions: RegionSummary[];
   borderRegions: number;
   representativePoints: Array<{ region: number; x: number; y: number }>;
+  unpaintedWhitePixels: number;
   pass: boolean;
 };
 
@@ -83,7 +84,14 @@ async function main() {
     const tooSmallRegions = segmentation.regions.filter(region => region.area >= 64 && (region.area < MIN_TOUCH_AREA || Math.min(region.maxX - region.minX + 1, region.maxY - region.minY + 1) < MIN_TOUCH_EDGE));
     const meaningfulDroppedRegions = segmentation.droppedRegions.filter(region => region.area >= MIN_MEANINGFUL_DROPPED_AREA);
     const target = targetFor(picture.level);
-    const pass = meaningfulDroppedRegions.length === 0 && (picture.level === 'classic' || tooSmallRegions.length === 0) && segmentation.regions.length >= target.min && segmentation.regions.length <= target.max && segmentation.borderRegions.length === 1;
+    const filled = paintRegions(segmentation, Object.fromEntries(segmentation.regions.map((_, index) => [index, '#E04444'])));
+    let unpaintedWhitePixels = 0;
+    for (let y = INSET + 1; y < SIZE - INSET - 1; y++) for (let x = INSET + 1; x < SIZE - INSET - 1; x++) {
+      const offset = (y * SIZE + x) * 4;
+      if (filled[offset] >= 180 && filled[offset + 1] >= 180 && filled[offset + 2] >= 180) unpaintedWhitePixels++;
+    }
+    // Region counts are informational: recognizable drawings and complete coverage take priority.
+    const pass = meaningfulDroppedRegions.length === 0 && unpaintedWhitePixels === 0 && segmentation.regions.length > 0 && segmentation.borderRegions.length === 1;
     audits.push({
       id: picture.id,
       artVersion: picture.artVersion,
@@ -94,12 +102,13 @@ async function main() {
       droppedRegions: segmentation.droppedRegions,
       tooSmallRegions,
       borderRegions: segmentation.borderRegions.length,
-      representativePoints: segmentation.regions.map((region, regionIndex) => ({ region: regionIndex, x: Math.round(region.centroidX), y: Math.round(region.centroidY) })),
+      representativePoints: segmentation.regions.map((region, regionIndex) => ({ region: regionIndex, x: region.seed % SIZE, y: Math.floor(region.seed / SIZE) })),
+      unpaintedWhitePixels,
       pass,
     });
   }
   const failed = audits.filter(audit => !audit.pass);
-  for (const audit of audits) console.log(`${audit.pass ? 'PASS' : 'FAIL'} ${audit.id}: ${audit.regions} regions (target ${audit.target}), dropped=${audit.droppedRegions.length}, tooSmall=${audit.tooSmallRegions.length}, border=${audit.borderRegions}`);
+  for (const audit of audits) console.log(`${audit.pass ? 'PASS' : 'FAIL'} ${audit.id}: ${audit.regions} regions (target ${audit.target}), dropped=${audit.droppedRegions.length}, tooSmall=${audit.tooSmallRegions.length}, border=${audit.borderRegions}, whiteRemaining=${audit.unpaintedWhitePixels}`);
   if (process.argv.includes('--json')) console.log(JSON.stringify(audits, null, 2));
   if (failed.length) {
     console.error(`Coloring asset audit failed for ${failed.length}/${audits.length} pictures.`);

@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx vite build",
+  "buildCommand": "npm run audit:coloring && npx vite build",
   "outputDirectory": ".output",
   "framework": "vite"
 }
