@@ -1,6 +1,8 @@
 import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
+import tailwindcssVite from '@tailwindcss/vite';
 import vinext from 'vinext';
+import { nitro } from 'nitro/vite';
 import { defineConfig } from 'vite';
 import hostingConfig from './.openai/hosting.json';
 
@@ -44,18 +46,26 @@ export default defineConfig(async () => {
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import('@cloudflare/vite-plugin');
 
+  // Vercel needs Nitro's server adapter. The default build remains the
+  // Cloudflare/Sites build used by the existing Sites deployment.
+  const isVercel = process.env.VERCEL === '1' || process.env.NITRO_PRESET === 'vercel';
+
   return {
-    css: { postcss: { plugins: [tailwindcss()] } },
+    css: isVercel ? undefined : { postcss: { plugins: [tailwindcss()] } },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
     plugins: [
       vinext(),
-      sites(),
-      cloudflare({
-        viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
-        config: localBindingConfig,
-      }),
+      ...(isVercel
+        ? [tailwindcssVite(), nitro()]
+        : [
+            sites(),
+            cloudflare({
+              viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
+              config: localBindingConfig,
+            }),
+          ]),
     ],
   };
 });
