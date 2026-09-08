@@ -17,4 +17,8 @@ Progress uses localStorage in the current browser. No accounts or server databas
 
 Image assets: `public/coloring-sheet.png` and `public/og.png`, created with built-in Imagegen. Coloring brief: four bold black and white kindergarten drawings in a 2x2 sprite sheet — butterfly, flower in pot, house with sun, whale — closed regions and large shapes. Social brief: cream/lilac card, exact title “แต้มสี”, tagline “โลกใบเล็ก สีสันใบใหญ่”, partly colored butterfly and five color swatches.
 
-Optional WebMCP: `read_coloring_state` and `fill_coloring_regions`, feature detected through document.modelContext. No supported browser context was available to verify registration and execution in this environment.
+The gallery now contains 12 scene illustrations plus 4 preserved classic sprite illustrations. Scene regions include sky, water, ground, and other background elements as regular fillable regions. Gallery filters group by category and difficulty, while `/coloring/[pictureId]` keeps progress keyed by picture ID and art version.
+
+The palette has 20 colors: 12 main colors plus eight optional darker and lighter scene colors. White is a real paint color; the eraser removes a fill and returns the region to its original line art.
+
+Optional WebMCP: `read_coloring_state` reports `pictureId`, `artVersion`, region count, fills, and palette; `fill_coloring_regions` fills validated region/color pairs. The API is feature detected through `document.modelContext`.

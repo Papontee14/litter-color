@@ -1,7 +1,7 @@
 ﻿export type Region = { pixels: number[]; minX: number; minY: number; maxX: number; maxY: number };
-export type Segmentation = { width: number; height: number; original: Uint8ClampedArray; labels: Int32Array; regions: Region[] };
+export type Segmentation = { width: number; height: number; original: Uint8ClampedArray; labels: Int32Array; regions: Region[]; artVersion: string };
 // Segment original line art once, keeping boundaries independent of chosen colors.
-export function findRegions(image: { width: number; height: number; data: Uint8ClampedArray }, minArea = 180): Segmentation {
+export function findRegions(image: { width: number; height: number; data: Uint8ClampedArray }, minArea = 180, originalData = image.data, artVersion = 'region-v1'): Segmentation {
   const { width, height, data } = image;
   const labels = new Int32Array(width * height).fill(-1);
   const seen = new Uint8Array(width * height);
@@ -24,7 +24,7 @@ export function findRegions(image: { width: number; height: number; data: Uint8C
     }
     if (!border && r.pixels.length >= minArea) { for(const p of r.pixels) labels[p]=regions.length; regions.push(r); }
   }
-  return { width, height, original:new Uint8ClampedArray(data), labels, regions };
+  return { width, height, original:new Uint8ClampedArray(originalData), labels, regions, artVersion };
 }
 export function paintRegions(segmentation: Segmentation, fills: Record<number,string>): Uint8ClampedArray<ArrayBuffer> {
   const output = new Uint8ClampedArray(segmentation.original);
